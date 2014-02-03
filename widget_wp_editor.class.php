@@ -58,16 +58,6 @@ class Widget_WP_Editor extends WP_Widget {
         $field_id = $this->get_field_id( 'html' );
         $field_name = $this->get_field_name( 'html' );
         $html = isset( $instance[ 'html' ] ) ? apply_filters( 'the_content', $instance['html'] ) : '';
-        
-        /**
-         * To get the private mce settings form [_WP_Editors]
-         * We need use [skin] settings from [mce settings]
-         * Otherwise, reset skin may trigger tinymce use default skin instead of wp/project predefined skin
-         **/
-        $class = new ReflectionClass( '_WP_Editors' );
-        $property = $class->getProperty('mce_settings');
-        $property->setAccessible( true );
-        $mce_settings = $property->getValue();
         ?>
         
     <div class="widget-mce">
@@ -79,32 +69,42 @@ class Widget_WP_Editor extends WP_Widget {
     //<![CDATA[
         (function(jq){
             var id = <?php echo json_encode( $field_id );?>;
-            var isPostMode = <?php echo json_encode( (boolean)sizeof($_POST) );?>;
-            var settings = <?php echo json_encode( $mce_settings[$field_id] );?>;
+            var isAjaxMode = <?php echo json_encode( defined( 'DOING_AJAX' ) && DOING_AJAX == true );?>;
             /**
              * For ajax only, that is the reason why we check $_POST
              **/
-            if( id.toString().length && isPostMode && typeof tinymce != 'undefined'){
-                tinymce.execCommand('mceRemoveEditor', true, id);
-                tinymce.execCommand('mceAddEditor', true, id);
-                tinymce.get(id).getBody().setAttribute('skin', settings.skin );
+            if( id.toString().length && isAjaxMode && typeof tinymce != 'undefined' ){
+                tinymce.execCommand( 'mceRemoveEditor', true, id );
+                var init;
+                if( typeof tinyMCEPreInit.mceInit[ id ] == 'undefined' ){
+                    init = tinyMCEPreInit.mceInit[ id ] = tinymce.extend( {}, tinyMCEPreInit.mceInit[ getTemplateWidgetId( id ) ] );
+                }else{
+                    init = tinyMCEPreInit.mceInit[ id ];
+                }
+                
+                try { tinymce.init( init ); } catch(e){ console.log( e ); }
                 
                 if ( typeof(QTags) == 'function' ) {
-                    for ( qt in tinyMCEPreInit.qtInit ) {
-                        var objQtSettings = jq.extend({}, tinyMCEPreInit.qtInit[qt]);
+                    var objQtSettings;
+                    
+                    if( typeof tinyMCEPreInit.qtInit[ id ] == 'undefined' ){
+                        objQtSettings = tinyMCEPreInit.qtInit[ id ] = jq.extend( {}, tinyMCEPreInit.qtInit[ getTemplateWidgetId( id ) ] );
                         objQtSettings['id'] = id;
-                        
-                        jq( '[id="wp-' + id + '-wrap"]' ).unbind( 'onmousedown' );
-                        jq( '[id="wp-' + id + '-wrap"]' ).bind( 'onmousedown', function(){
-                            wpActiveEditor = id;
-                        });
-                        
-                        QTags(objQtSettings);
-                        QTags._buttonsInit();
-                        break;
+                    }else{
+                        objQtSettings = tinyMCEPreInit.qtInit[ id ];
                     }
+                    
+                    jq( '[id="wp-' + id + '-wrap"]' ).unbind( 'onmousedown' );
+                    jq( '[id="wp-' + id + '-wrap"]' ).bind( 'onmousedown', function(){
+                        wpActiveEditor = id;
+                    });
+                    
+                    QTags( objQtSettings );
+                    QTags._buttonsInit();
+                    
                     switchEditors.switchto( jq( 'textarea[id="' + id + '"]' ).closest( '.widget-mce' ).find( '.wp-switch-editor.switch-' + ( getUserSetting( 'editor' ) == 'html' ? 'html' : 'tmce' ) )[0] );
                 }
+                
             }
         })(jQuery);
     //]]>
@@ -123,38 +123,27 @@ class Widget_WP_Editor extends WP_Widget {
         ?>
         <script type="text/javascript">
         //<![CDATA[
+        /**
+         * Get widget template id, for retrieving init settings from js
+         **/
+        function getTemplateWidgetId( id ){
+            var form = jQuery( 'textarea[id="' + id + '"]' ).closest( 'form' );
+            var id_base = form.find( 'input[name="id_base"]' ).val();
+            var widget_id = form.find( 'input[name="widget-id"]' ).val();
+            return id.replace( widget_id, id_base + '-__i__' );
+        }
         (function(jq){
             jq( document ).ready(function(){
-                function getTemplateWidgetId( id ){
-                    var form = jq( 'textarea[id="' + id + '"]' ).closest( 'form' );
-                    var id_base = form.find( 'input[name="id_base"]' ).val();
-                    var widget_id = form.find( 'input[name="widget-id"]' ).val();
-                    return id.replace( widget_id, id_base + '-__i__' );
-                }
-                
-                /**
-                 * Add mce editor function back
-                 * Also, apply proper skin
-                 **/
-                function resetEditor(id, flag){
-                    tinymce.execCommand('mceAddEditor', flag, id);
-                    if( typeof( tinyMCEPreInit.mceInit[id] ) != 'undefined' ){
-                        tinymce.get(id).getBody().setAttribute('skin', tinyMCEPreInit.mceInit[id].skin );
-                    }else{
-                        try{
-                            tinymce.get(id).getBody().setAttribute('skin', tinyMCEPreInit.mceInit[getTemplateWidgetId( id )].skin );
-                        }catch(err){}
-                    }
-                }
-                
                 /**
                  * Turn off mce mode can trigger mce store data to the textarea
                  **/
                 function fixTinyMceSubmit( mce ){
                     mce.closest('form').find('input[type="submit"]').click(function(){
-                        var id = mce.find( 'textarea' ).attr( 'id' );
-                        tinymce.execCommand('mceRemoveEditor', false, id);
-                        resetEditor(id, false);
+                        if( getUserSetting( 'editor' ) == 'tmce' ){
+                            var id = mce.find( 'textarea' ).attr( 'id' );
+                            tinymce.execCommand('mceRemoveEditor', false, id);
+                            tinymce.execCommand( 'mceAddEditor', false, id );
+                        }
                         return true;
                     });
                 }
@@ -169,14 +158,17 @@ class Widget_WP_Editor extends WP_Widget {
                         mce.removeAttr( 'data-mce');
                         var id = mce.find( 'textarea' ).attr( 'id' );
                         setTimeout(function(){
-                            resetEditor(id, true);
+                            tinymce.execCommand('mceRemoveEditor', true, id);
+                            var init = tinyMCEPreInit.mceInit[ id ] = tinymce.extend( {}, tinyMCEPreInit.mceInit[ getTemplateWidgetId( id ) ] );
+                            try { tinymce.init( init ); } catch(e){ console.log( e ); }
+                            
                             /**
                              * Fix Quick tag
                              **/
                             if ( typeof(QTags) == 'function' ) {
                                 mce.find( '.quicktags-toolbar' ).remove();
                                 
-                                var objQtSettings = jq.extend({}, tinyMCEPreInit.qtInit[getTemplateWidgetId( id )]);
+                                var objQtSettings = jq.extend({}, tinyMCEPreInit.qtInit[ getTemplateWidgetId( id ) ] );
                                 objQtSettings['id'] = id;
                                 
                                 jq( '[id="wp-' + id + '-wrap"]' ).unbind( 'onmousedown' );
@@ -189,15 +181,16 @@ class Widget_WP_Editor extends WP_Widget {
                                 //Re-init the QTags
                                 QTags._buttonsInit();
                                 
-                                switchEditors.switchto( mce.find( '.wp-switch-editor.switch-' + ( getUserSetting( 'editor' ) == 'html' ? 'html' : 'tmce' ) )[0] );
+                                switchEditors.switchto( mce.find( '.wp-switch-editor.switch-' + ( getUserSetting( 'editor' ) == 'html' ? 'html' : 'tmce' ) )[ 0 ] );
                             }
+                            
                             fixTinyMceSubmit( mce );
                         }, 50 );
                     }else{
                         //Re-posistion widget
                         var id = mce.find( 'textarea' ).attr( 'id' );
                         tinymce.execCommand('mceRemoveEditor', false, id);
-                        resetEditor(id, false);
+                        tinymce.execCommand( 'mceAddEditor', false, id );
                     }
                 }
                 
@@ -211,9 +204,9 @@ class Widget_WP_Editor extends WP_Widget {
                          * Store html as settings as html attribute [data-mce]
                          * restore to widget when add widget
                          **/
-                        mce.attr( 'data-mce', mce.html() );
                         var id = mce.find( 'textarea' ).attr( 'id' );
                         tinymce.execCommand('mceRemoveEditor', true, id);
+                        mce.attr( 'data-mce', mce.html() );
                         mce.empty();
                     }else{
                         fixTinyMceSubmit( mce );
