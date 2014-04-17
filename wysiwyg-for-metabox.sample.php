@@ -11,6 +11,7 @@
         var mainContainerInit = jq('#div__' + sectionIdInit + '__' + intCurrentIndexInit);
         var idBase = '__' + sectionIdInit + '__' + intCurrentIndexInit;
         var pattern = new RegExp( idBase + '(_|$)?', 'g' );
+        var namePattern = sectionNameInit + '[' + intCurrentIndexInit + ']';
         var dataMce;
         if( typeof tinymce != 'undefined' ){
             tinymce.execCommand('mceRemoveEditor', true, mainContainerInit.find( 'textarea' ).attr( 'id' ) );
@@ -45,6 +46,10 @@
                 setTimeout(function() {
                     tinymce.execCommand('mceRemoveEditor', true, id);
                     var init = tinyMCEPreInit.mceInit[ id ] = tinymce.extend({}, tinyMCEPreInit.mceInit[ '__' + sectionIdInit + '__' + intCurrentIndexInit + '__value' ]);
+                    for( i in init )
+                        if( typeof init[i] == 'string' )
+                            init[i] = init[i].replace( '__' + sectionIdInit + '__' + intCurrentIndexInit + '__value', id );
+                    
                     try {
                         tinymce.init(init);
                     } catch (e) {
@@ -92,8 +97,12 @@
                 __sectionName = sectionName;
                 
                 setTimeout(function(){
-                    if( __intCurrentIndex == intCurrentIndexInit ) return;
-                    fixTinyMceSort( __mainContainer, dataMce.replace( pattern, '__' + __sectionId + '__' + intCurrentIndex + '$1' ).replace( sectionNameInit + '[' + intCurrentIndexInit + ']', __sectionName + '[' + intCurrentIndex + ']' ) );
+                    if( __intCurrentIndex == intCurrentIndexInit ) {
+                        //__mainContainer.empty();
+                        //fixTinyMceSort( __mainContainer, dataMce );
+                    }else{
+                        fixTinyMceSort( __mainContainer, dataMce.replace( pattern, '__' + __sectionId + '__' + intCurrentIndex + '$1' ).replace( namePattern, __sectionName + '[' + intCurrentIndex + ']' ) );
+                    }
                 }, 1);
                                 
                 __mainContainer.data('duplication', function(target, intNewCurrentIndex){
@@ -105,7 +114,7 @@
                 var cloned = __mainContainer.clone();
                 
                 cloned.attr( 'id', cloned.attr( 'id').replace( pattern, '__' + __sectionId + '__' + intNewCurrentIndex + '$1' ) );
-                cloned.html( '' );
+                cloned.empty();
                 
                 cloned.ready(function(){
                     cloned.data('objMetaTool', new metaTool());
