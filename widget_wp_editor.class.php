@@ -160,6 +160,10 @@ class Widget_WP_Editor extends WP_Widget {
                         setTimeout(function(){
                             tinymce.execCommand('mceRemoveEditor', true, id);
                             var init = tinyMCEPreInit.mceInit[ id ] = tinymce.extend( {}, tinyMCEPreInit.mceInit[ getTemplateWidgetId( id ) ] );
+                            for( i in init )
+                                if( typeof init[i] == 'string' )
+                                    init[i] = init[i].replace( getTemplateWidgetId( id ), id );
+                                    
                             try { tinymce.init( init ); } catch(e){ console.log( e ); }
                             
                             /**
